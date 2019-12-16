@@ -21,7 +21,7 @@ var verb bool
 //
 
 // Item is the object stored in each tree node.
-type Item interface{}
+type Item=interface{}
 
 // CompareFunc returns 0 if a==b, <0 if a<b, >0 if a>b.
 type CompareFunc func(a, b Item) int
