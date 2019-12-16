@@ -1,4 +1,4 @@
-module github.com/evedark1/rbtree
+module github.com/yasushi-saito/rbtree
 
 require github.com/stretchr/testify v1.4.0
 
