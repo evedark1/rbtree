@@ -4,18 +4,20 @@
 
 package rbtree
 
-import "testing"
-import "math/rand"
-import "fmt"
-import "log"
-import "sort"
+import (
+	"fmt"
+	"log"
+	"math/rand"
+	"sort"
+	"testing"
+)
 
 const testVerbose = false
 
 // Create a tree storing a set of integers
-func testNewIntSet() *Tree {
-	return NewTree(func(i1, i2 Item) int {
-		return int(i1.(int)) - int(i2.(int))
+func testNewIntSet() *rbTree[int, voidType] {
+	return newTreeFunc[int, voidType](func(a, b int) int {
+		return a - b
 	})
 }
 
@@ -28,70 +30,75 @@ func testAssert(t *testing.T, b bool, message string) {
 func TestEmpty(t *testing.T) {
 	tree := testNewIntSet()
 	testAssert(t, tree.Len() == 0, "len!=0")
-	testAssert(t, tree.Max().NegativeLimit(), "neglimit")
-	testAssert(t, tree.Min().Limit(), "limit")
-	testAssert(t, tree.FindGE(10).Limit(), "Not empty")
-	testAssert(t, tree.FindLE(10).NegativeLimit(), "Not empty")
-	testAssert(t, tree.Get(10) == nil, "Not empty")
-	testAssert(t, tree.Limit().Equal(tree.Min()), "iter")
+	testAssert(t, tree.Min() == nil, "minlimit")
+	testAssert(t, tree.Max() == nil, "maxlimit")
+	testAssert(t, tree.Find(10) == nil, "Not empty")
+	testAssert(t, tree.FindGE(10) == nil, "Not empty")
+	testAssert(t, tree.FindLE(10) == nil, "Not empty")
 }
 
 func TestFindGE(t *testing.T) {
 	tree := testNewIntSet()
-	testAssert(t, tree.Insert(10), "Insert1")
-	testAssert(t, !tree.Insert(10), "Insert2")
+	tree.Insert(10)
 	testAssert(t, tree.Len() == 1, "len==1")
-	testAssert(t, tree.FindGE(10).Item().(int) == 10, "FindGE 10")
-	testAssert(t, tree.FindGE(11).Limit(), "FindGE 11")
-	testAssert(t, tree.FindGE(9).Item().(int) == 10, "FindGE 10")
+	testAssert(t, tree.FindGE(10).item == 10, "FindGE 10")
+	testAssert(t, tree.FindGE(11) == nil, "FindGE 11")
+	testAssert(t, tree.FindGE(9).item == 10, "FindGE 10")
 }
 
 func TestFindLE(t *testing.T) {
 	tree := testNewIntSet()
-	testAssert(t, tree.Insert(10), "insert1")
-	testAssert(t, tree.FindLE(10).Item().(int) == 10, "FindLE 10")
-	testAssert(t, tree.FindLE(11).Item().(int) == 10, "FindLE 11")
-	testAssert(t, tree.FindLE(9).NegativeLimit(), "FindLE 9")
+	tree.Insert(10)
+	testAssert(t, tree.FindLE(10).item == 10, "FindLE 10")
+	testAssert(t, tree.FindLE(11).item == 10, "FindLE 11")
+	testAssert(t, tree.FindLE(9) == nil, "FindLE 9")
 }
 
-func TestGet(t *testing.T) {
+func TestTreeFind(t *testing.T) {
 	tree := testNewIntSet()
-	testAssert(t, tree.Insert(10), "insert1")
-	testAssert(t, tree.Get(10).(int) == 10, "Get 10")
-	testAssert(t, tree.Get(9) == nil, "Get 9")
-	testAssert(t, tree.Get(11) == nil, "Get 11")
+	_, ok := tree.Insert(10)
+	testAssert(t, ok, "insert1")
+	_, ok = tree.Insert(10)
+	testAssert(t, !ok, "insert1")
+	testAssert(t, tree.Find(10).item == 10, "Get 10")
+	testAssert(t, tree.Find(9) == nil, "Get 9")
+	testAssert(t, tree.Find(11) == nil, "Get 11")
 }
 
 func TestDelete(t *testing.T) {
 	tree := testNewIntSet()
 	testAssert(t, !tree.DeleteWithKey(10), "del")
 	testAssert(t, tree.Len() == 0, "dellen")
-	testAssert(t, tree.Insert(10), "ins")
+	tree.Insert(10)
 	testAssert(t, tree.DeleteWithKey(10), "del")
 	testAssert(t, tree.Len() == 0, "dellen")
 
 	// delete was deleting after the request if request not found
 	// ensure this does not regress:
-	testAssert(t, tree.Insert(10), "ins")
+	tree.Insert(10)
 	testAssert(t, !tree.DeleteWithKey(9), "del")
 	testAssert(t, tree.Len() == 1, "dellen")
 
 }
 
-func iterToString(i Iterator) string {
+func iterToString(nd *node[int, voidType]) string {
 	s := ""
-	for ; !i.Limit(); i = i.Next() {
-		if s != "" { s = s + ","}
-		s = s + fmt.Sprintf("%d", i.Item().(int))
+	for ; nd != nil; nd = nd.doNext() {
+		if s != "" {
+			s = s + ","
+		}
+		s = s + fmt.Sprintf("%d", nd.item)
 	}
 	return s
 }
 
-func reverseIterToString(i Iterator) string {
+func reverseIterToString(nd *node[int, voidType]) string {
 	s := ""
-	for ; !i.NegativeLimit(); i = i.Prev() {
-		if s != "" { s = s + ","}
-		s = s + fmt.Sprintf("%d", i.Item().(int))
+	for ; nd != nil; nd = nd.doPrev() {
+		if s != "" {
+			s = s + ","
+		}
+		s = s + fmt.Sprintf("%d", nd.item)
 	}
 	return s
 }
@@ -164,11 +171,7 @@ func (o *oracle) Insert(key int) bool {
 		}
 	}
 
-	n := len(o.data) + 1
-	newData := make([]int, n)
-	copy(newData, o.data)
-	newData[n-1] = key
-	o.data = newData
+	o.data = append(o.data, key)
 	sort.Sort(o)
 	return true
 }
@@ -221,19 +224,15 @@ type oracleIterator struct {
 }
 
 func (oiter oracleIterator) Limit() bool {
-	return oiter.index >= len(oiter.o.data)
+	return oiter.index >= len(oiter.o.data) || oiter.index < 0
 }
 
 func (oiter oracleIterator) Min() bool {
 	return oiter.index == 0
 }
 
-func (oiter oracleIterator) NegativeLimit() bool {
-	return oiter.index < 0
-}
-
 func (oiter oracleIterator) Max() bool {
-	return oiter.index == len(oiter.o.data) - 1
+	return oiter.index == len(oiter.o.data)-1
 }
 
 func (oiter oracleIterator) Item() int {
@@ -248,27 +247,26 @@ func (oiter oracleIterator) Prev() oracleIterator {
 	return oracleIterator{oiter.o, oiter.index - 1}
 }
 
-func compareContents(t *testing.T, oiter oracleIterator, titer Iterator) {
+func compareContents(t *testing.T, oiter oracleIterator, titer *node[int, voidType]) {
 	oi := oiter
 	ti := titer
 
 	// Test forward iteration
-	testAssert(t, oi.NegativeLimit() == ti.NegativeLimit(), "rend")
-	if oi.NegativeLimit() {
-		oi = oi.Next()
-		ti = ti.Next()
+	testAssert(t, oi.Limit() == (ti == nil), "rend")
+	if oi.Limit() {
+		return
 	}
 
-	for !oi.Limit() && !ti.Limit() {
+	for !oi.Limit() && ti != nil {
 		// log.Print("Item: ", oi.Item(), ti.Item())
-		if ti.Item().(int) != oi.Item() {
-			t.Fatal("Wrong item", ti.Item(), oi.Item())
+		if ti.item != oi.Item() {
+			t.Fatal("Wrong item", ti.item, oi.Item())
 		}
 		oi = oi.Next()
-		ti = ti.Next()
+		ti = ti.doNext()
 	}
-	if !ti.Limit() {
-		t.Fatal("!ti.done", ti.Item())
+	if ti != nil {
+		t.Fatal("!ti.done", ti.item)
 	}
 	if !oi.Limit() {
 		t.Fatal("!oi.done", oi.Item())
@@ -277,28 +275,23 @@ func compareContents(t *testing.T, oiter oracleIterator, titer Iterator) {
 	// Test reverse iteration
 	oi = oiter
 	ti = titer
-	testAssert(t, oi.Limit() == ti.Limit(), "end")
-	if oi.Limit() {
-		oi = oi.Prev()
-		ti = ti.Prev()
-	}
 
-	for !oi.NegativeLimit() && !ti.NegativeLimit() {
-		if ti.Item().(int) != oi.Item() {
-			t.Fatal("Wrong item", ti.Item(), oi.Item())
+	for !oi.Limit() && ti != nil {
+		if ti.item != oi.Item() {
+			t.Fatal("Wrong item", ti.item, oi.Item())
 		}
 		oi = oi.Prev()
-		ti = ti.Prev()
+		ti = ti.doPrev()
 	}
-	if !ti.NegativeLimit() {
-		t.Fatal("!ti.done", ti.Item())
+	if ti != nil {
+		t.Fatal("!ti.done", ti.item)
 	}
-	if !oi.NegativeLimit() {
+	if !oi.Limit() {
 		t.Fatal("!oi.done", oi.Item())
 	}
 }
 
-func compareContentsFull(t *testing.T, o *oracle, tree *Tree) {
+func compareContentsFull(t *testing.T, o *oracle, tree *rbTree[int, voidType]) {
 	compareContents(t, o.FindGE(t, int(-1)), tree.FindGE(-1))
 }
 
@@ -342,37 +335,4 @@ func TestRandomized(t *testing.T) {
 			compareContents(t, o.FindLE(t, key), tree.FindLE(key))
 		}
 	}
-}
-
-//
-// Examples
-//
-
-func ExampleIntString() {
-	type MyItem struct {
-		key   int
-		value string
-	}
-
-	tree := NewTree(func(a, b Item) int { return a.(MyItem).key - b.(MyItem).key })
-	tree.Insert(MyItem{10, "value10"})
-	tree.Insert(MyItem{12, "value12"})
-
-	fmt.Println("Get(10) ->", tree.Get(MyItem{10, ""}))
-	fmt.Println("Get(11) ->", tree.Get(MyItem{11, ""}))
-
-	// Find an element >= 11
-	iter := tree.FindGE(MyItem{11, ""})
-	fmt.Println("FindGE(11) ->", iter.Item())
-
-	// Find an element >= 13
-	iter = tree.FindGE(MyItem{13, ""})
-	if !iter.Limit() {
-		panic("There should be no element >= 13")
-	}
-
-	// Output:
-	// Get(10) -> {10 value10}
-	// Get(11) -> <nil>
-	// FindGE(11) -> {12 value12}
 }

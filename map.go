@@ -1,137 +1,157 @@
 package rbtree
 
-type Pair struct {
-	key Item
-	value Item
-}
+import (
+	"golang.org/x/exp/constraints"
+)
 
-// Map like map[interface{}]interface{}
+// ordered map like map[K]V
 // implement by Tree
-type Map struct {
-	tree *Tree
+type Map[K, V any] struct {
+	tree *rbTree[K, V]
 }
 
 // NewMap Create a new empty Map
-func NewMap(compare CompareFunc) Map {
-	comparePair := func(a, b interface{}) int {
-		pa := a.(Pair)
-		pb := b.(Pair)
-		return compare(pa.key, pb.key)
+func NewMap[K constraints.Ordered, V any]() Map[K, V] {
+	cmp := func(a, b K) int {
+		if a < b {
+			return -1
+		}
+		if a > b {
+			return 1
+		}
+		return 0
 	}
-	return Map{tree: NewTree(comparePair)}
+	return Map[K, V]{tree: newTreeFunc[K, V](cmp)}
 }
 
-// follow Map operation simple wrapper Tree
+// Create a new empty map with compare function
+func NewMapFunc[K, V any](cmp func(a, b K) int) Map[K, V] {
+	return Map[K, V]{tree: newTreeFunc[K, V](cmp)}
+}
 
-func (m Map) Len() int {
+// follow Map operation simple wrapper rbTree
+
+func (m Map[K, V]) Len() int {
 	return m.tree.Len()
 }
 
-func (m Map) Min() MapIterator {
-	return MapIterator{Iterator: m.tree.Min()}
+func (m Map[K, V]) Min() MapIterator[K, V] {
+	return newMapIterator(m.tree.Min())
 }
 
-func (m Map) Max() MapIterator {
-	return MapIterator{Iterator: m.tree.Max()}
+func (m Map[K, V]) Max() MapIterator[K, V] {
+	return newMapIterator(m.tree.Max())
 }
 
-func (m Map) Limit() MapIterator {
-	return MapIterator{Iterator: m.tree.Limit()}
+func (m Map[K, V]) Limit() MapIterator[K, V] {
+	return newMapIterator[K, V](nil)
 }
 
-func (m Map) NegativeLimit() MapIterator {
-	return MapIterator{Iterator: m.tree.NegativeLimit()}
+func (m Map[K, V]) Find(k K) MapIterator[K, V] {
+	return newMapIterator(m.tree.Find(k))
 }
 
-func (m Map) Find(key Item) MapIterator {
-	pair := Pair{key, nil}
-	n, found := m.tree.findGE(pair)
-	if !found {
-		return MapIterator{Iterator{m.tree, nil}}
-	}
-	return MapIterator{Iterator{m.tree, n}}
+func (m Map[K, V]) FindGE(k K) MapIterator[K, V] {
+	return MapIterator[K, V]{m.tree.FindGE(k)}
 }
 
-func (m Map) FindGE(key Item) MapIterator {
-	pair := Pair{key, nil}
-	return MapIterator{Iterator: m.tree.FindGE(pair)}
-}
-
-func (m Map) FindLE(key Item) MapIterator {
-	pair := Pair{key, nil}
-	return MapIterator{Iterator: m.tree.FindLE(pair)}
+func (m Map[K, V]) FindLE(k K) MapIterator[K, V] {
+	return MapIterator[K, V]{m.tree.FindLE(k)}
 }
 
 // Get from map
 // value: value find with key
 // ok: ture if key found
-func (m Map) Get(key Item) (value Item, ok bool) {
-	pair := Pair{key, nil}
-	n, found := m.tree.findGE(pair)
-	if !found {
-		return nil, false
+func (m Map[K, V]) Get(k K) (V, bool) {
+	nd := m.tree.Find(k)
+	if nd == nil {
+		var ep V
+		return ep, false
 	}
-	pair = n.item.(Pair)
-	return pair.value, true
+	return nd.value, true
 }
 
 // Set key and value, create new pair if not exist
-// return true if key already exist
-func (m Map) Set(key Item, value Item) bool {
-	pair := Pair{key, value}
-	n, found := m.tree.findGE(pair)
-	if found {
-		n.item = pair
-	} else {
-		m.tree.Insert(pair)
-	}
-	return found
+func (m Map[K, V]) Set(k K, v V) {
+	nd, _ := m.tree.Insert(k)
+	nd.value = v
 }
 
-func (m Map) DeleteWithKey(key Item) bool {
-	pair := Pair{key, nil}
-	n, found := m.tree.findGE(pair)
-	if found {
-		m.tree.doDelete(n)
+// Delete an item with the given key.
+// Return true if the item was found.
+func (m Map[K, V]) DeleteWithKey(k K) bool {
+	nd := m.tree.Find(k)
+	if nd != nil {
+		m.tree.Delete(nd)
 		return true
 	}
 	return false
 }
 
-func (m Map) DeleteWithIterator(iter MapIterator) {
-	m.tree.DeleteWithIterator(iter.Iterator)
+func (m Map[K, V]) DeleteWithIterator(iter MapIterator[K, V]) {
+	m.tree.Delete(iter.nd)
 }
 
-func (m Map) Tree() *Tree {
-	return m.tree
+// iterator allows scanning map elements in sort order.
+//
+// iterator invalidation rule is the same as C++ std::map<>'s. That
+// is, if you delete the element that an iterator points to, the
+// iterator becomes invalid. For other operation types, the iterator
+// remains valid.
+//
+// default iterator is not valid, Limit() == false
+type MapIterator[K, V any] struct {
+	nd *node[K, V]
 }
 
-// MapIterator allows scanning map elements in sort order.
-// implement by Iterator
-type MapIterator struct {
-	Iterator
+func newMapIterator[K, V any](n *node[K, V]) MapIterator[K, V] {
+	return MapIterator[K, V]{n}
 }
 
-func (iter MapIterator) Equal(iter2 MapIterator) bool {
-	return iter.Iterator.Equal(iter2.Iterator)
+// allow clients to verify iterator is from the right map
+// REQUIRES: !iter.Limit() && !iter.NegativeLimit()
+func (iter MapIterator[K, V]) Map() Map[K, V] {
+	return Map[K, V]{tree: iter.nd.myTree}
 }
 
-func (iter MapIterator) Next() MapIterator {
-	return MapIterator{Iterator: iter.Iterator.Next()}
+// Check if iterator equal, same as it1 == it2
+func (iter MapIterator[K, V]) Equal(iter2 MapIterator[K, V]) bool {
+	return iter.nd == iter2.nd
 }
 
-func (iter MapIterator) Prev() MapIterator {
-	return MapIterator{Iterator: iter.Iterator.Prev()}
+// Check if the iterator points to element in the map
+func (iter MapIterator[K, V]) Limit() bool {
+	return iter.nd == nil
 }
 
-func (iter MapIterator) Item() Pair {
-	return iter.Iterator.Item().(Pair)
+// Create a new iterator that points to the successor of the current element.
+// REQUIRES: !iter.Limit()
+func (iter MapIterator[K, V]) Next() MapIterator[K, V] {
+	return MapIterator[K, V]{iter.nd.doNext()}
 }
 
-func (iter MapIterator) Key() Item {
-	return iter.Item().key
+// Create a new iterator that points to the predecessor of the current node.
+// REQUIRES: !iter.Limit()
+func (iter MapIterator[K, V]) Prev() MapIterator[K, V] {
+	return MapIterator[K, V]{iter.nd.doPrev()}
 }
 
-func (iter MapIterator) Value() Item {
-	return iter.Item().value
+// Return the current key in element.
+// REQUIRES: !iter.Limit()
+func (iter MapIterator[K, V]) Key() K {
+	return iter.nd.item
+}
+
+// Return the current value in element.
+// REQUIRES: !iter.Limit()
+func (iter MapIterator[K, V]) Value() V {
+	return iter.nd.value
+}
+
+// Return the current value pointer in element, nil if iter.Limit()
+func (iter MapIterator[K, V]) ValuePointer() *V {
+	if iter.nd == nil {
+		return nil
+	}
+	return &iter.nd.value
 }
