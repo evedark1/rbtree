@@ -15,7 +15,7 @@ import (
 const testVerbose = false
 
 // Create a tree storing a set of integers
-func testNewIntSet() *rbTree[int, voidType] {
+func testNewIntTree() *rbTree[int, voidType] {
 	return newTreeFunc[int, voidType](func(a, b int) int {
 		return a - b
 	})
@@ -27,8 +27,14 @@ func testAssert(t *testing.T, b bool, message string) {
 	}
 }
 
+func equalAssert[T comparable](t *testing.T, expect T, actual T) {
+	if expect != actual {
+		t.Fatal(fmt.Sprintf("equalAssert fail: %v != %v", expect, actual))
+	}
+}
+
 func TestEmpty(t *testing.T) {
-	tree := testNewIntSet()
+	tree := testNewIntTree()
 	testAssert(t, tree.Len() == 0, "len!=0")
 	testAssert(t, tree.Min() == nil, "minlimit")
 	testAssert(t, tree.Max() == nil, "maxlimit")
@@ -38,7 +44,7 @@ func TestEmpty(t *testing.T) {
 }
 
 func TestFindGE(t *testing.T) {
-	tree := testNewIntSet()
+	tree := testNewIntTree()
 	tree.Insert(10)
 	testAssert(t, tree.Len() == 1, "len==1")
 	testAssert(t, tree.FindGE(10).item == 10, "FindGE 10")
@@ -47,7 +53,7 @@ func TestFindGE(t *testing.T) {
 }
 
 func TestFindLE(t *testing.T) {
-	tree := testNewIntSet()
+	tree := testNewIntTree()
 	tree.Insert(10)
 	testAssert(t, tree.FindLE(10).item == 10, "FindLE 10")
 	testAssert(t, tree.FindLE(11).item == 10, "FindLE 11")
@@ -55,7 +61,7 @@ func TestFindLE(t *testing.T) {
 }
 
 func TestTreeFind(t *testing.T) {
-	tree := testNewIntSet()
+	tree := testNewIntTree()
 	_, ok := tree.Insert(10)
 	testAssert(t, ok, "insert1")
 	_, ok = tree.Insert(10)
@@ -66,7 +72,7 @@ func TestTreeFind(t *testing.T) {
 }
 
 func TestDelete(t *testing.T) {
-	tree := testNewIntSet()
+	tree := testNewIntTree()
 	testAssert(t, !tree.DeleteWithKey(10), "del")
 	testAssert(t, tree.Len() == 0, "dellen")
 	tree.Insert(10)
@@ -104,7 +110,7 @@ func reverseIterToString(nd *node[int, voidType]) string {
 }
 
 func TestIterator(t *testing.T) {
-	tree := testNewIntSet()
+	tree := testNewIntTree()
 	for i := 0; i < 10; i = i + 2 {
 		tree.Insert(i)
 	}
@@ -299,7 +305,7 @@ func TestRandomized(t *testing.T) {
 	const numKeys = 1000
 
 	o := newOracle()
-	tree := testNewIntSet()
+	tree := testNewIntTree()
 	r := rand.New(rand.NewSource(0))
 	for i := 0; i < 10000; i++ {
 		op := r.Intn(100)
